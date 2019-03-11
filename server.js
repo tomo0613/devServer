@@ -39,17 +39,13 @@ async function serveIndexFile(response) {
         <script>
             const eventSource = new EventSource('sse');
             eventSource.onmessage = function(e) {
-                console.info('server-sent event: ', e.data);
+                console.info('dev-server ', e.data);
 
                 if (e.data === 'reload') {
                     eventSource.close();
                     document.location.reload();
                 }
             };
-            eventSource.onerror = function() {
-                console.warn('server-sent event: connection lost');
-                eventSource.close();
-            }
         </script>
     `;
 
