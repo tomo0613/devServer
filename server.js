@@ -1,55 +1,69 @@
 const fs = require('fs');
 const http = require('http');
+const childProcess = require('child_process');
 
 const port = process.env.PORT || 3000;
 const folderToWatch = process.env.WATCH; // "./build"
 
 const httpServer = http.createServer(requestListener);
 
+let reloadTimeoutId;
+let reloadPending = false;
+let browserConnected = false;
 let dispatchEvent = () => {};
 
-httpServer.listen(port, () => console.info(`Server is listening at http://localhost:${port}\n`));
+httpServer.listen(port, () => {
+    console.info(`Server is listening at http://localhost:${port}\n`);
+    openBrowser();
+});
 
 if (folderToWatch) {
     watchFolder(folderToWatch, (changedFiles) => {
         console.info('files changed:\n\t' + Array.from(changedFiles.values()).join('\n\t'));
 
+        if (!browserConnected) {
+            return;
+        }
+
         dispatchEvent('reload');
         changedFiles.clear();
+
+        reloadTimeoutId = setTimeout(() => {
+            console.info('pending reload');
+            reloadPending = true;
+        }, 250);
     });
 }
 
 function requestListener(incomingMessage, serverResponse) {
     switch (incomingMessage.url) {
         case '/sse':
+            browserConnected = true;
+            clearTimeout(reloadTimeoutId);
             initSSE(serverResponse);
+
+            if (reloadPending) {
+                reloadPending = false;
+                dispatchEvent('reload');
+            }
             return;
         case '/':
             serveIndexFile(serverResponse);
             return;
         default:
-            console.info(`serve: "${incomingMessage.url}"`);
+            // console.info(`serve: "${incomingMessage.url}"`);
             serveFile(`.${incomingMessage.url}`, serverResponse);
     }
 }
 
 async function serveIndexFile(response) {
-    let fileContent = await readFile('./index.html');
-    const clientReloadListener = `<body>
-        <script>
-            const eventSource = new EventSource('sse');
-            eventSource.onmessage = function(e) {
-                console.info('dev-server ', e.data);
+    const [indexFile, browserReloadScript] = await Promise.all([
+        readFile('./index.html'),
+        readFile(__dirname + '/browserReloadListener.js'),
+    ]);
 
-                if (e.data === 'reload') {
-                    eventSource.close();
-                    document.location.reload();
-                }
-            };
-        </script>
-    `;
-
-    fileContent = fileContent.toString().replace('<body>', clientReloadListener);
+    const scriptToInject = `<body>\n\t<script>\n${browserReloadScript.toString()}\t</script>`;
+    const fileContent = indexFile.toString().replace('<body>', scriptToInject);
 
     response.setHeader('Content-Type', 'text/html');
     response.end(fileContent);
@@ -108,7 +122,8 @@ async function getFoldersRecursive(path, folders = []) {
         console.error(error);
     }
 
-    const folderPaths = dirEntries.filter((dirEntry) => dirEntry.isDirectory())
+    const folderPaths = dirEntries
+        .filter((dirEntry) => dirEntry.isDirectory())
         .map((dirEntry) => path + '/' + dirEntry.name);
 
     for (const folderPath of folderPaths) {
@@ -170,3 +185,9 @@ function debounce(fnc, delay = 200, immediate = false) {
     };
 }
 
+function openBrowser() {
+    console.info('Opening browser');
+
+    const ref = childProcess.spawn('firefox', [`http://localhost:${port}/`]);
+    ref.unref();
+}
