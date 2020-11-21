@@ -1,7 +1,7 @@
 # devServer
 
-A simple developer server that can reload your browser, without dependencies.
+A simple developer server that can reload your browser, without external package dependencies.
 
 usage: `WATCH='./build' node server.js`
 
-`Node v10.10.0` is required to watch folders
+`node -v` >= `10.10.0` required to watch folders
